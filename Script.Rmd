@@ -1,0 +1,252 @@
+---
+title: "Spatial suppression analysis"
+output:
+  pdf_document: 
+    number_sections: yes
+    toc: yes
+  html_notebook:
+    number_sections: yes
+    toc: yes
+  html_document: default
+---
+
+
+# Vorbereitungen
+## Files ablegen
+Die MATLAB-Files (.mat) müssen im Verzeichnis <tt>`data/`</tt> liegen. Für dieses Beispiel liegen zwei .mat-Files in diesem Verzeichnis:
+```{r}
+list.files("data/")
+```
+
+## *Packages* laden
+
+```{r}
+library(tidyverse)
+library(R.matlab)
+library(nlstools)
+library(Metrics)
+```
+
+## Leeren Datensatz erstellen
+
+```{r}
+# Select folder of .mat files & create a list of file names -----------------
+(allFiles <- paste("data", list.files("data/"), sep = "/"))
+```
+
+```{r}
+# Create target dataframe ---------------------------------------------------
+numberOfFiles <- length(allFiles)
+(result <- data.frame(matrix(0, numberOfFiles, 24)))
+```
+Damit wurde für die Anzahl Personen, für die .mat-Files vorliegen, ein leerer Datesatz erstellt (zwei Personen = zwei Zeilen). Der leere Datensatz enthält 24 Variablen (X1 -- X24; diese werden mit den Daten gefüllt).
+
+
+# Daten einlesen
+```{r}
+# Read files ---------------------------------------------------------------
+list1   <- map(allFiles, readMat)             # map function readMat on allFiles
+clean   <- function(list){(list$result)}      # read result section of list
+(list2   <- map(list1, clean))                # map function 'clean'
+```
+<tt>`list2`</tt> enthält die von MATLAB ausgegebenen Rohdaten der zwei Personen im Verzeichnis <tt>`data/`</tt>.
+Die Zeilen <tt>`[1,]`</tt>, <tt>`[2,]`</tt>, <tt>`[3,]`</tt>, <tt>`[4,]`</tt> stehen für die vier verwendeten Mustergrössen (1.8°, 3.6°, 5.4°, 7.2°), die Spalten <tt>`[,1]`</tt>, <tt>`[,2]`</tt>, <tt>`[,3]`</tt>, <tt>`[,4]`</tt>, <tt>`[,5]`</tt>, <tt>`[,6]`</tt> für die 6 Schwellenschätzungen pro Mustergrösse.
+
+
+
+# Datensatz erstellen
+```{r}
+trans    <- function(matrix){as.vector(t(matrix))}  # transform matrix to vector
+list3    <- map(list2, trans)                       # map function 'trans'
+result   <- do.call(rbind, list3)                   # row bind list3
+(results <- as.data.frame(cbind(allFiles,result)))  # attach file names & create data frame
+```
+Das Objekt <tt>`results`</tt> ist nun ein tidy <tt>`data.frame`</tt>: Pro Person eine Zeile und jede Variable in einer eigenen Spalte. <tt>`V2`</tt> bis <tt>`V25`</tt> stehen für die 24 Schwellenschätzungen pro Person.
+
+# Variablen neu benennen
+Hier werden den Variablen sinnvolle Namen gegeben:
+```{r}
+results  <- rename(results,
+                   subject=allFiles,
+                   s1r1p1=V2,   s2r1p1=V8,    s3r1p1=V14,     s4r1p1=V20,
+                   s1r1p2=V3,   s2r1p2=V9,    s3r1p2=V15,     s4r1p2=V21,
+                   s1r2p1=V4,   s2r2p1=V10,   s3r2p1=V16,     s4r2p1=V22,
+                   s1r2p2=V5,   s2r2p2=V11,   s3r2p2=V17,     s4r2p2=V23,
+                   s1r3p1=V6,   s2r3p1=V12,   s3r3p1=V18,     s4r3p1=V24,
+                   s1r3p2=V7,   s2r3p2=V13,   s3r3p2=V19,     s4r3p2=V25)
+```
+
+<tt>`s1`</tt>, <tt>`s2`</tt>, <tt>`s3`</tt>, <tt>`s4`</tt>  stehen für die Mustergrössen (1.8°, 3.6°, 5.4°, 7.2°).
+
+<tt>`r1`</tt>, <tt>`r2`</tt>, <tt>`r3`</tt> stehen für die Wiederholungen.
+
+<tt>`p1`</tt>, <tt>`p2`</tt>, stehen für die Schätzungen.
+
+Daraus folgt: Es bestehen für jede Mustergrösse drei Wiederholungen à zwei Schätzungen. Total ergibt das **24 Schwellenschätzungen**.
+
+# Klasse der Variablen ändern
+Um Berechnungen anstellen zu können, muss die Klasse der Variablen geändert werden:
+```{r}
+factorconvert <- function(f){as.numeric(levels(f))[f]}
+results[2:25]  <- lapply(results[2:25], factorconvert)
+map_chr(results, class)
+```
+Jetzt sind alle Variablen numerisch (ausser <tt>`subject`</tt>).
+
+
+# Variablen bilden
+
+Als nächstes werden die Variablen <tt>`subject`</tt>, <tt>`t2`</tt> und <tt>`exp2`</tt> gebildet.
+
+```{r}
+results$subject <- as.numeric(substr(allFiles, 6,8))
+results$t2      <- as.Date(substr(allFiles, 20, 29))
+results$exp2    <- substr(allFiles,10,16)
+results[,27]    <- factor(results[,27])
+show(results)
+```
+
+
+
+# Ausreisserkontrolle Teil 1
+## Korrektur für Darbietungszeiten von > 1000 ms
+Der Programmcode, welcher die Darbietungszeiten generierte, hatte eine programmierte Darbietungszeitlimite von 1000 ms. Immer wenn der adaptive Algorithmus des Quest-Verfahrens eine Darbietungszeit von > 1000 ermittelte, wurde den Vpn deshalb der Stimulus mit einer Darbietungszeit von exakt 1000 ms präsentiert. Hier werden diese Werte durch die Darbietungszeitlimite ersetzt. **Der Wert 400 entspricht 1000 ms** (*"full width at half height of temporal envelope"*).
+```{r}
+results[2:25][results[2:25] > 400] <- 400
+```
+
+## Ausschliessung aufgrund zweimaliger Erreichung der Darbietungszeitlimite von 1000 ms (innerhalb einer Mustergrösse)
+Als nächstes werden Personen entfernt, welche mindestens zwei Schwellenschätzungen erhalten haben, die über der Darbietungszeitlimite liegen.
+```{r}
+dropSubjects <- function(x, n, cols){
+  x[rowSums(x[cols] == n) < 2, ]
+}
+results <- dropSubjects(results, 400, c(-1,-8:-25))
+results <- dropSubjects(results, 400, c(-1:-7,-14:-25))
+results <- dropSubjects(results, 400, c(-1:-13,-20:-25))
+results <- dropSubjects(results, 400, c(-1:-19))
+```
+
+
+
+# Berechnung der Stimulusdauer
+## Schwellenschätzungen in Millisekunden
+Um die Schwellenschätzungen in Millisekunden zu erhalten, müssen die bis bis hierhin verwendeten Rohwerte mit dem Faktor 2.5 multipliziert werden (*full width at half height of temporal envelope*). Diese Variablen haben den Präfix x25. Es werden also 24 neue Variablen erstellt (6 Schwellenschätzungen pro Mustergrösse):
+
+```{r}
+multiply <- function(x){
+  x <- x * 2.5
+}
+
+results <- map(results[, 2:25], multiply) %>% 
+  setNames(., paste0("x25", names(results[, 2:25]))) %>% 
+  bind_cols(results, .)
+```
+
+## Schwellenschätzungen im logarithmierten Raum
+Um die tatsächlichen, von MATLAB bestimmten Schwellenschätzungen zu erhalten, müssen die x25 Variablen logarithmiert werden. Diese Variablen haben den Präfix log10. Es werden erneut 24 neue Variablen erstellt (6 Schwellenschätzungen pro Mustergrösse):
+
+```{r}
+results <- map(results[, 28:51], log10) %>% 
+  setNames(., paste0("log10", names(results[, 2:25]))) %>% 
+  bind_cols(results, .)
+```
+
+
+
+
+# Ausreisserkontrolle Teil 2
+
+Nachdem die logarithmierten Schwellenschätzungen gebildet wurden (log10-Variablen), kann ein Mittelwerte pro Mustergrösse gebildet werden. Für jede Person werden dafür pro Mustergrösse die niedrigste und höchste der sechs Schwellenschätzungen entfernt und über die restlichen vier Schwellenschätzungen der Mittelwert gebildet. 
+
+```{r}
+meanCustom <- function(x){
+  x <- x[x != min(x) & x != max(x)]
+  return(mean(x))
+}
+
+results$S1log10mean <- round(apply(results[,52:57], 1, meanCustom), digits = 4)
+results$S2log10mean <- round(apply(results[,58:63], 1, meanCustom), digits = 4)
+results$S3log10mean <- round(apply(results[,64:69], 1, meanCustom), digits = 4)
+results$S4log10mean <- round(apply(results[,70:75], 1, meanCustom), digits = 4)
+```
+
+
+# Bildung der invertierten Mittelwerte
+
+Diese Werte werden für die Berechnung der exponentiellen Regression verwendet
+
+```{r}
+invert <- function(x){10 ^ x}
+
+results <- map(results[, 76:79], invert) %>% 
+  setNames(., paste0(substr(names(results[, 76:79]), 1, 2), "mean")) %>% 
+  bind_cols(results, .)
+```
+
+
+
+# Bildung des Suppression-Index
+
+Mit den <tt>`log10mean`</tt>-Variablen kann der Suppression-Index bestimmt werden
+
+```{r}
+results$Si <- round(results$S4log10mean - results$S1log10mean, digits = 3)
+```
+
+
+# Berechnung der exponentiellen Regression
+
+Zum Schluss werden mit den invertierten Mittelwerten (<tt>`S1mean`</tt>, <tt>`S2mean`</tt>, <tt>`S3mean`</tt>, <tt>`S4mean`</tt>) die Parameter der exponentiellen Regression bestimmt.
+
+```{r}
+numberOfFiles <- length(results$subject)
+intslop <- data.frame(matrix(0,numberOfFiles,8))
+intslop <- rename(intslop,
+                  subject   = X1,
+                  Sasymptote= X2,
+                  Sslope    = X3,
+                  SresS1    = X4,
+                  SresS2    = X5,
+                  SresS3    = X6,
+                  SresS4    = X7,
+                  Srmse     = X8)
+
+cond <- c(1.8, 3.6, 5.4, 7.2)
+allSubjects <- results$subject
+
+for (i in allSubjects)
+{intslop[i,1] <- i
+yvalues <- t(subset(results,
+                   subject == i,
+                   select = c(S1mean, S2mean, S3mean, S4mean)))
+expFunction <- function(x,intercept,slope){I(intercept*exp(slope*x))}
+nlsFit <- nls(yvalues ~ expFunction(cond, intercept, slope), start = list(intercept = 20, slope = .01))
+asymptote <- coef(nlsFit)[1]
+slope     <- coef(nlsFit)[2]
+SSres     <- sum(residuals(nlsFit) ^ 2)
+
+intslop[i, 2] <- round(asymptote, digits = 0)
+intslop[i, 3] <- round(slope, digits = 3)
+intslop[i, 4] <- round(nlsResiduals(nlsFit)$resi1[,2][1], digits = 0)
+intslop[i, 5] <- round(nlsResiduals(nlsFit)$resi1[,2][2], digits = 0)
+intslop[i, 6] <- round(nlsResiduals(nlsFit)$resi1[,2][3], digits = 0)
+intslop[i, 7] <- round(nlsResiduals(nlsFit)$resi1[,2][4], digits = 0)
+intslop[i, 8] <- round(rmse(yvalues, predict(nlsFit)),    digits = 0)
+}
+
+results <- merge(results, intslop,
+                 by = "subject")
+
+```
+
+# Übersicht des erstellten Datensatzes
+
+Mit diesen Schritten haben wir einen Datensatz erstellt, der für zwei Personen 91 Variablen enthält. Der Datensatz hat folgende Struktur:
+
+```{r}
+str(results)
+```
+
+
+
