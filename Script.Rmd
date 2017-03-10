@@ -110,12 +110,12 @@ show(results)
 
 # Ausreisserkontrolle Teil 1
 ## Korrektur für Darbietungszeiten von > 1000 ms
-Der Programmcode, welcher die Darbietungszeiten generierte, hatte eine programmierte Darbietungszeitlimite von 1000 ms. Immer wenn der adaptive Algorithmus des Quest-Verfahrens eine Darbietungszeit von > 1000 ermittelte, wurde den Vpn deshalb der Stimulus mit einer Darbietungszeit von exakt 1000 ms präsentiert. Hier werden diese Werte durch die Darbietungszeitlimite ersetzt. **Der Wert 400 entspricht 1000 ms** (*"full width at half height of temporal envelope"*).
+Der Programmcode, welcher die Darbietungszeiten generierte, hatte eine programmierte Darbietungszeitlimite von 1000 ms. Immer wenn der adaptive Algorithmus des Quest-Verfahrens eine Darbietungszeit von > 1000 ermittelte, wurde den Vpn deshalb der Stimulus mit einer Darbietungszeit von exakt 1000 ms präsentiert. Schwellenschätzungen von > 1000 ms sind deshalb nicht valide und werden pauschal für alle Personen mit der Darbietungszeitlimite ersetzt. **Der Wert 400 entspricht 1000 ms** (*"full width at half height of temporal envelope"*).
 ```{r}
 results[2:25][results[2:25] > 400] <- 400
 ```
 
-## Ausschliessung aufgrund zweimaliger Erreichung der Darbietungszeitlimite von 1000 ms (innerhalb einer Mustergrösse)
+## Ausschliessung aufgrund zweimaliger Erreichung einer Schwellenschätzung von 1000 ms (innerhalb einer Mustergrösse)
 Als nächstes werden Personen entfernt, welche mindestens zwei Schwellenschätzungen erhalten haben, die über der Darbietungszeitlimite liegen.
 ```{r}
 dropSubjects <- function(x, n, cols){
@@ -157,7 +157,7 @@ results <- map(results[, 28:51], log10) %>%
 
 # Ausreisserkontrolle Teil 2
 
-Nachdem die logarithmierten Schwellenschätzungen gebildet wurden (log10-Variablen), kann ein Mittelwerte pro Mustergrösse gebildet werden. Für jede Person werden dafür pro Mustergrösse die niedrigste und höchste der sechs Schwellenschätzungen entfernt und über die restlichen vier Schwellenschätzungen der Mittelwert gebildet. 
+Nachdem die logarithmierten Schwellenschätzungen gebildet wurden (log10-Variablen), kann ein Mittelwert pro Mustergrösse gebildet werden. Für jede Person werden dafür pro Mustergrösse die niedrigste und höchste der sechs Schwellenschätzungen entfernt und über die restlichen vier Schwellenschätzungen der Mittelwert gebildet. 
 
 ```{r}
 meanCustom <- function(x){
