@@ -121,6 +121,7 @@ Als nächstes werden Personen entfernt, welche mindestens zwei Schwellenschätzu
 dropSubjects <- function(x, n, cols){
   x[rowSums(x[cols] == n) < 2, ]
 }
+
 results <- dropSubjects(results, 400, c(-1,-8:-25))
 results <- dropSubjects(results, 400, c(-1:-7,-14:-25))
 results <- dropSubjects(results, 400, c(-1:-13,-20:-25))
